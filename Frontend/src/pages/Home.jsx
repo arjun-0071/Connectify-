@@ -97,6 +97,7 @@ export const Home = () => {
     setLoading(true);
     try {
       await verifyOtp({
+        email: formData.forgotEmail,
         otp: formData.otp,
         newPassword: formData.newPassword,
       });

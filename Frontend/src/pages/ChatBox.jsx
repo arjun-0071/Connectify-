@@ -18,9 +18,14 @@ export const ChatBox = ({ friend, sidebarOpen }) => {
   const [text, setText] = useState("");
   const [image, setImage] = useState(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isTyping, setIsTyping] = useState(false);
+  const [onlineUsers, setOnlineUsers] = useState([]);
   const scrollRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   const userId = localStorage.getItem("userId");
+
+  const isFriendOnline = onlineUsers.includes(friend?._id);
 
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
@@ -62,8 +67,40 @@ export const ChatBox = ({ friend, sidebarOpen }) => {
       }
     });
 
-    return () => socket.off("receive-message");
+    // Typing indicator listeners
+    socket.on("user-typing", ({ from }) => {
+      if (from === friend._id) setIsTyping(true);
+    });
+
+    socket.on("user-stop-typing", ({ from }) => {
+      if (from === friend._id) setIsTyping(false);
+    });
+
+    // Online status listener
+    socket.on("online-users", (users) => {
+      setOnlineUsers(users);
+    });
+
+    return () => {
+      socket.off("receive-message");
+      socket.off("user-typing");
+      socket.off("user-stop-typing");
+      socket.off("online-users");
+    };
   }, [friend, userId]);
+
+  // Handle typing events with debounce
+  const handleTyping = (e) => {
+    setText(e.target.value);
+
+    socket.emit("typing", { to: friend._id, from: userId });
+
+    // Clear previous timeout and set a new one
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    typingTimeoutRef.current = setTimeout(() => {
+      socket.emit("stop-typing", { to: friend._id, from: userId });
+    }, 1000);
+  };
 
   const sendMessage = async () => {
     if ((!text || [...text].filter((c) => c.trim() !== "").length === 0) && !image) return;
@@ -80,6 +117,7 @@ export const ChatBox = ({ friend, sidebarOpen }) => {
 
     setMessages((prev) => [...prev, msg]);
     socket.emit("send-message", { to: friend._id, message: msg });
+    socket.emit("stop-typing", { to: friend._id, from: userId });
 
     try {
       await axios.post(
@@ -106,12 +144,19 @@ export const ChatBox = ({ friend, sidebarOpen }) => {
   return (
     <div className="chatbox-container">
       <div className={`uu ${sidebarOpen ? "ope" : "clos"}`}>
-        <img
-          src={friend.image && !friend.image.includes('undefined') ? friend.image : DEFAULT_IMAGE}
-          alt={friend.username}
-          onError={(e) => { e.target.src = DEFAULT_IMAGE; }}
-        />
-        <h3>{friend.username}</h3>
+        <div className="chat-header-info">
+          <img
+            src={friend.image && !friend.image.includes('undefined') ? friend.image : DEFAULT_IMAGE}
+            alt={friend.username}
+            onError={(e) => { e.target.src = DEFAULT_IMAGE; }}
+          />
+          <div className="chat-header-text">
+            <h3>{friend.username}</h3>
+            <span className={`online-status ${isFriendOnline ? "online" : "offline"}`}>
+              {isFriendOnline ? "Online" : "Offline"}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="chat-messages">
@@ -138,6 +183,11 @@ export const ChatBox = ({ friend, sidebarOpen }) => {
             </div>
           );
         })}
+        {isTyping && (
+          <div className="typing-indicator">
+            <span></span><span></span><span></span>
+          </div>
+        )}
         <div ref={scrollRef}></div>
       </div>
 
@@ -145,8 +195,8 @@ export const ChatBox = ({ friend, sidebarOpen }) => {
         <input
           value={text}
           className="inpu"
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Type your message..."
+          onChange={handleTyping}
+          placeholder="Type your message... (Enter to send)"
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

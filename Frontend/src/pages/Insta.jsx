@@ -285,6 +285,11 @@ export const Insta = () => {
           {activeMenu === "my" && (
             <div className="viewarea">
               <h1>My Posts</h1>
+              {myposts.length === 0 && (
+                <p style={{ textAlign: "center", color: "var(--text-dim)", marginTop: "2rem", fontSize: "1.1rem" }}>
+                  You haven't posted anything yet. Create your first post!
+                </p>
+              )}
               {myposts.map(post => (
                 <PostCard
                   key={post._id}
@@ -310,6 +315,11 @@ export const Insta = () => {
           {activeMenu === "all" && (
             <div className="showarea">
               <h1>Feed</h1>
+              {data?.pages.flat().length === 0 && !isFetchingNextPage && (
+                <p style={{ textAlign: "center", color: "var(--text-dim)", marginTop: "2rem", fontSize: "1.1rem" }}>
+                  No posts yet. Be the first to share something!
+                </p>
+              )}
               <div className="feed-grid">
                 {data?.pages.flat().map(post => (
                   <PostCard

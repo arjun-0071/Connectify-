@@ -100,8 +100,7 @@ console.log("Socket.io initialized");
 const userSocketMap = new Map(); // userId => socketId
 
 
-let storedOtp = "";
-let otpEmail = "";
+const otpStore = new Map(); // email → { otp, expiresAt }
 app.get("/", (req, res) => {
   res.status(200).send("API is running");
 });
@@ -156,12 +155,13 @@ app.post("/login", async (req, res) => {
 
 app.post("/forgot-password", async (req, res) => {
   try {
-    const user = await User.findOne({ email: req.body.email });
+    const email = req.body.email;
+    const user = await User.findOne({ email });
     if (!user) return res.status(400).send("User not found");
     const otp = crypto.randomBytes(3).toString("hex");
-    storedOtp = otp;
-    otpEmail = req.body.email;
-    await sendOtpEmail(otpEmail, otp);
+    // Store OTP with 5-minute expiry, keyed by email (supports multiple users)
+    otpStore.set(email, { otp, expiresAt: Date.now() + 5 * 60 * 1000 });
+    await sendOtpEmail(email, otp);
     res.send("OTP sent");
   } catch {
     res.status(400).send("Error sending OTP");
@@ -169,13 +169,19 @@ app.post("/forgot-password", async (req, res) => {
 });
 
 app.post("/verify-otp", async (req, res) => {
-  const { otp, newPassword } = req.body;
-  if (otp !== storedOtp) return res.status(400).send("Invalid OTP");
+  const { email, otp, newPassword } = req.body;
+  const stored = otpStore.get(email);
+  if (!stored) return res.status(400).send("No OTP requested for this email");
+  if (Date.now() > stored.expiresAt) {
+    otpStore.delete(email);
+    return res.status(400).send("OTP has expired. Please request a new one.");
+  }
+  if (otp !== stored.otp) return res.status(400).send("Invalid OTP");
   try {
-    const user = await User.findOne({ email: otpEmail });
+    const user = await User.findOne({ email });
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
-    storedOtp = otpEmail = "";
+    otpStore.delete(email);
     res.send("Password updated successfully");
   } catch {
     res.status(400).send("Error updating password");
@@ -381,6 +387,19 @@ app.post("/getchatlist", auth, async (req, res) => {
 app.post("/send-message", auth, async (req, res) => {
   try {
     const { recipientId, content, image } = req.body;
+
+    // Verify the sender and recipient are friends before allowing the message
+    const friendship = await FriendRequest.findOne({
+      status: "accepted",
+      $or: [
+        { sender: req.user._id, recipient: recipientId },
+        { sender: recipientId, recipient: req.user._id },
+      ],
+    });
+    if (!friendship) {
+      return res.status(403).json({ error: "You can only message your friends" });
+    }
+
     const newMessage = await Message.create({
       sender: req.user._id,
       recipient: recipientId,
@@ -502,9 +521,13 @@ app.put("/insta/post/:id", auth, async (req, res) => {
 
     if (!post) return res.status(404).json({ error: "Post not found" });
 
+    // Ownership check: only the post author can edit
+    if (post.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: "You can only edit your own posts" });
+    }
+
     post.caption = caption || post.caption;
     post.image = image || post.image;
-    console.log(post.caption, post.image);
     const updatedPost = await post.save();
 
     res.json(updatedPost);
@@ -521,9 +544,13 @@ app.delete("/insta/post/:id", auth, async (req, res) => {
     if (!post) {
       return res.status(404).json({ error: "Post not found" });
     }
-    console.log("gg");
 
-    await post.deleteOne(); // or Post.findByIdAndDelete(post._id)
+    // Ownership check: only the post author can delete
+    if (post.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ error: "You can only delete your own posts" });
+    }
+
+    await post.deleteOne();
     res.json({ message: "Post deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: "Could not delete post" });
@@ -596,11 +623,18 @@ app.get("/insta/post/:id/comments", async (req, res) => {
 
 // Inside io.on("connection") in your existing backend
 
+// Helper: broadcast the list of currently online user IDs to all connected clients
+const broadcastOnlineUsers = () => {
+  const onlineUserIds = Array.from(userSocketMap.keys());
+  io.emit("online-users", onlineUserIds);
+};
+
 io.on("connection", (socket) => {
   console.log("Socket connected:", socket.id, "from:", socket.handshake.headers.origin);
 
   socket.on("register", (userId) => {
     userSocketMap.set(userId, socket.id);
+    broadcastOnlineUsers(); // notify everyone that a new user came online
   });
 
   socket.on("send-message", ({ to, message }) => {
@@ -610,6 +644,20 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Typing indicator: relay to the recipient if they are online
+  socket.on("typing", ({ to, from }) => {
+    const recipientSocketId = userSocketMap.get(to);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit("user-typing", { from });
+    }
+  });
+
+  socket.on("stop-typing", ({ to, from }) => {
+    const recipientSocketId = userSocketMap.get(to);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit("user-stop-typing", { from });
+    }
+  });
 
   socket.on("disconnect", () => {
     for (const [userId, socketId] of userSocketMap.entries()) {
@@ -618,6 +666,7 @@ io.on("connection", (socket) => {
         break;
       }
     }
+    broadcastOnlineUsers(); // notify everyone that a user went offline
   });
 });
 
