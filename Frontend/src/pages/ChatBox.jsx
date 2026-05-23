@@ -42,7 +42,13 @@ export const ChatBox = ({ friend, sidebarOpen }) => {
         const res = await axios.get(`${BASE_URL}/messages/${friend._id}`, {
           withCredentials: true,
         });
-        setMessages(res.data);
+        // Normalize sender/recipient to plain strings so comparisons work
+        const normalized = res.data.map((msg) => ({
+          ...msg,
+          sender: msg.sender?._id?.toString?.() || msg.sender?.toString?.() || msg.sender,
+          recipient: msg.recipient?._id?.toString?.() || msg.recipient?.toString?.() || msg.recipient,
+        }));
+        setMessages(normalized);
       } catch (err) {
         console.error("Fetch failed", err);
       }
@@ -111,12 +117,13 @@ export const ChatBox = ({ friend, sidebarOpen }) => {
       <div className="chat-messages">
         {messages.map((msg, i) => {
           const decryptedText = decryptText(msg.content || "");
+          const senderId = msg.sender?._id?.toString?.() || msg.sender?.toString?.() || msg.sender;
           return (
             <div
               key={i}
-              className={msg.sender === userId ? "messa outgoing" : "messa incoming"}
+              className={senderId === userId ? "messa outgoing" : "messa incoming"}
             >
-              <p className={msg.sender === userId ? "out" : "in"}>
+              <p className={senderId === userId ? "out" : "in"}>
                 {msg.image && (
                   <img
                     src={msg.image}
