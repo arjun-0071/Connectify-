@@ -1,6 +1,3 @@
-connectify2025.vercel.app
-
-
 # 🌐 Connectify
 
 Connectify is a modern, real-time social networking platform designed to bring people together. Built with the MERN stack and Socket.io, it offers a seamless experience for communication and connection.
