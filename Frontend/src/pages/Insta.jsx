@@ -21,6 +21,101 @@ const CLOUDINARY_UPLOAD_PRESET = "unsigned_preset";
 const BASE_URL = import.meta.env.VITE_API_URL.replace(/\/$/, "");
 const DEFAULT_IMAGE = `${BASE_URL}/default-photo.png`;
 
+// PostCard extracted OUTSIDE Insta so React keeps a stable component identity
+const PostCard = ({
+  post,
+  isMine,
+  editingId,
+  editCaption,
+  setEditCaption,
+  onEdit,
+  onDelete,
+  onLike,
+  onToggleComments,
+  showComments,
+  commentValue,
+  onCommentChange,
+  onCommentSubmit,
+  setEditingId,
+}) => (
+  <div className="postcard animate-in">
+    <div className="postcard-header">
+      <img
+        src={post.user?.image && !post.user.image.includes('undefined') ? post.user.image : DEFAULT_IMAGE}
+        alt="user"
+        onError={(e) => { e.target.src = DEFAULT_IMAGE; }}
+      />
+      <span>{post.user?.username || "Anonymous"}</span>
+    </div>
+
+    {post.image.includes(".mp4") ? (
+      <video src={post.image} controls />
+    ) : (
+      <img src={post.image} alt="post content" />
+    )}
+
+    <div className="postcard-footer">
+      <div className="action-bar">
+        {post.likes.includes(localStorage.getItem("userId")) ? (
+          <FaHeart onClick={() => onLike(post._id)} className="like" />
+        ) : (
+          <FaRegHeart onClick={() => onLike(post._id)} className="ll" />
+        )}
+        <FaRegComment onClick={() => onToggleComments(post._id)} className="ll" />
+      </div>
+
+      <p className="likes-count">{post.likes?.length || 0} likes</p>
+
+      {editingId === post._id ? (
+        <div className="edit-area">
+          <textarea value={editCaption} onChange={(e) => setEditCaption(e.target.value)} />
+          <FaCheck onClick={() => onEdit(post._id)} className="icon confirm" />
+        </div>
+      ) : (
+        <p className="caption"><strong>{post.user?.username}</strong> {post.caption}</p>
+      )}
+
+      {isMine && (
+        <div className="mine-actions">
+          <FaEdit onClick={() => { setEditingId(post._id); setEditCaption(post.caption); }} />
+          <FaTrash onClick={() => onDelete(post._id)} />
+        </div>
+      )}
+
+      <div className="comment-section">
+        <div className="comment-toggle" onClick={() => onToggleComments(post._id)}>
+          {post.comments?.length > 0 ? `View all ${post.comments.length} comments` : "No comments yet"}
+        </div>
+
+        {showComments && (
+          <div className="comments-list">
+            {post.comments.map((c, i) => (
+              <div key={i} className="comment-item">
+                <img
+                  src={c.user?.image && !c.user.image.includes('undefined') ? c.user.image : DEFAULT_IMAGE}
+                  alt="user"
+                  onError={(e) => { e.target.src = DEFAULT_IMAGE; }}
+                />
+                <p><strong>{c.user?.username}:</strong> {c.text}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="comment-input-group">
+          <input
+            type="text"
+            placeholder="Add a comment..."
+            value={commentValue}
+            onChange={(e) => onCommentChange(post._id, e.target.value)}
+          />
+          <FaCommentMedical onClick={() => onCommentSubmit(post._id)} className="add-comment-btn" />
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 export const Insta = () => {
   const [activeMenu, setActiveMenu] = useState("all");
   const [image, setimage] = useState(null);
@@ -145,6 +240,10 @@ export const Insta = () => {
     }
   };
 
+  const handleCommentChange = (postId, value) => {
+    setCommentInputs((prev) => ({ ...prev, [postId]: value }));
+  };
+
   const handleComment = async (id) => {
     const text = commentInputs[id]?.trim();
     if (!text) return;
@@ -156,85 +255,6 @@ export const Insta = () => {
       console.error(err);
     }
   };
-
-  const PostCard = ({ post, isMine }) => (
-    <div className="postcard animate-in">
-      <div className="postcard-header">
-        <img
-          src={post.user?.image && !post.user.image.includes('undefined') ? post.user.image : DEFAULT_IMAGE}
-          alt="user"
-          onError={(e) => { e.target.src = DEFAULT_IMAGE; }}
-        />
-        <span>{post.user?.username || "Anonymous"}</span>
-      </div>
-
-      {post.image.includes(".mp4") ? (
-        <video src={post.image} controls />
-      ) : (
-        <img src={post.image} alt="post content" />
-      )}
-
-      <div className="postcard-footer">
-        <div className="action-bar">
-          {post.likes.includes(localStorage.getItem("userId")) ? (
-            <FaHeart onClick={() => handlelike(post._id)} className="like" />
-          ) : (
-            <FaRegHeart onClick={() => handlelike(post._id)} className="ll" />
-          )}
-          <FaRegComment onClick={() => toggleComments(post._id)} className="ll" />
-        </div>
-
-        <p className="likes-count">{post.likes?.length || 0} likes</p>
-
-        {editingId === post._id ? (
-          <div className="edit-area">
-            <textarea value={editCaption} onChange={(e) => setEditCaption(e.target.value)} />
-            <FaCheck onClick={() => handleEdit(post._id)} className="icon confirm" />
-          </div>
-        ) : (
-          <p className="caption"><strong>{post.user?.username}</strong> {post.caption}</p>
-        )}
-
-        {isMine && (
-          <div className="mine-actions">
-            <FaEdit onClick={() => { setEditingId(post._id); setEditCaption(post.caption); }} />
-            <FaTrash onClick={() => handleDelete(post._id)} />
-          </div>
-        )}
-
-        <div className="comment-section">
-          <div className="comment-toggle" onClick={() => toggleComments(post._id)}>
-            {post.comments?.length > 0 ? `View all ${post.comments.length} comments` : "No comments yet"}
-          </div>
-
-          {showComments[post._id] && (
-            <div className="comments-list">
-              {post.comments.map((c, i) => (
-                <div key={i} className="comment-item">
-                  <img
-                    src={c.user?.image && !c.user.image.includes('undefined') ? c.user.image : DEFAULT_IMAGE}
-                    alt="user"
-                    onError={(e) => { e.target.src = DEFAULT_IMAGE; }}
-                  />
-                  <p><strong>{c.user?.username}:</strong> {c.text}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div className="comment-input-group">
-            <input
-              type="text"
-              placeholder="Add a comment..."
-              value={commentInputs[post._id] || ""}
-              onChange={(e) => setCommentInputs(prev => ({ ...prev, [post._id]: e.target.value }))}
-            />
-            <FaCommentMedical onClick={() => handleComment(post._id)} className="add-comment-btn" />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <>
@@ -265,7 +285,25 @@ export const Insta = () => {
           {activeMenu === "my" && (
             <div className="viewarea">
               <h1>My Posts</h1>
-              {myposts.map(post => <PostCard key={post._id} post={post} isMine={true} />)}
+              {myposts.map(post => (
+                <PostCard
+                  key={post._id}
+                  post={post}
+                  isMine={true}
+                  editingId={editingId}
+                  editCaption={editCaption}
+                  setEditCaption={setEditCaption}
+                  setEditingId={setEditingId}
+                  onEdit={handleEdit}
+                  onDelete={handleDelete}
+                  onLike={handlelike}
+                  onToggleComments={toggleComments}
+                  showComments={showComments[post._id]}
+                  commentValue={commentInputs[post._id] || ""}
+                  onCommentChange={handleCommentChange}
+                  onCommentSubmit={handleComment}
+                />
+              ))}
             </div>
           )}
 
@@ -273,7 +311,25 @@ export const Insta = () => {
             <div className="showarea">
               <h1>Feed</h1>
               <div className="feed-grid">
-                {data?.pages.flat().map(post => <PostCard key={post._id} post={post} isMine={false} />)}
+                {data?.pages.flat().map(post => (
+                  <PostCard
+                    key={post._id}
+                    post={post}
+                    isMine={false}
+                    editingId={editingId}
+                    editCaption={editCaption}
+                    setEditCaption={setEditCaption}
+                    setEditingId={setEditingId}
+                    onEdit={handleEdit}
+                    onDelete={handleDelete}
+                    onLike={handlelike}
+                    onToggleComments={toggleComments}
+                    showComments={showComments[post._id]}
+                    commentValue={commentInputs[post._id] || ""}
+                    onCommentChange={handleCommentChange}
+                    onCommentSubmit={handleComment}
+                  />
+                ))}
               </div>
               {isFetchingNextPage && <p className="loading-more">Loading more...</p>}
               <div ref={ref} />
